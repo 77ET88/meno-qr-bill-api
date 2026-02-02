@@ -257,6 +257,8 @@ class GeneratePayload(BaseModel):
     creditor_name: str = Field(default="Meno Transport")
     creditor_zip: str = Field(default="1785")
     creditor_city: str = Field(default="CRESSIER")
+    creditor_street: str = Field(default="Route de la Gare")
+    creditor_house_no: str = Field(default="100")
 
     debtor_name: str = Field(default="King Jouet SA")
     debtor_street: str = Field(default="Centre Commercial Pam Center")
@@ -306,13 +308,18 @@ def generate(payload: GeneratePayload, x_api_key: Optional[str] = Header(default
         raise HTTPException(status_code=400, detail=f"Reference error: {e}")
 
     # Générer SVG via qrbill
+    creditor_street = (payload.creditor_street or "").strip()
+    creditor_house_no = (payload.creditor_house_no or "").strip()
+    creditor_street_full = f"{creditor_street} {creditor_house_no}".strip()
+
     bill = QRBill(
         account=payload.iban,
         creditor={
             "name": payload.creditor_name,
+            "street": creditor_street_full,   # ✅ IMPORTANT
             "pcode": payload.creditor_zip,
             "city": payload.creditor_city,
-            "country": "CH"
+            "country": "CH",
         },
         amount=payload.amount,
         reference_number=rf_reference,
