@@ -15,6 +15,8 @@ from pydantic import BaseModel, Field
 from qrbill import QRBill
 from svglib.svglib import svg2rlg
 from reportlab.graphics import renderPDF, renderPM
+from PIL import Image
+import io
 
 
 # ========= Réglages injection =========
@@ -133,6 +135,23 @@ def require_api_key(x_api_key):
     if API_KEY and x_api_key != API_KEY:
         raise HTTPException(status_code=401, detail="Unauthorized")
 
+def svg_to_highres_png(svg_path: Path, png_path: Path, dpi: int = 300):
+    drawing = svg2rlg(str(svg_path))
+    if drawing is None:
+        raise ValueError("Impossible de lire le SVG pour conversion PNG.")
+
+    png_bytes = renderPM.drawToString(drawing, fmt="PNG", dpi=dpi)
+
+    img = Image.open(io.BytesIO(png_bytes))
+    if img.mode in ("RGBA", "LA"):
+        bg = Image.new("RGB", img.size, "white")
+        bg.paste(img, mask=img.split()[-1])
+        img = bg
+    else:
+        img = img.convert("RGB")
+
+    img.save(str(png_path), format="PNG", optimize=False)
+
 
 @app.post("/generate")
 def generate(payload: GeneratePayload, x_api_key: Optional[str] = Header(default=None)):
@@ -197,8 +216,8 @@ def generate(payload: GeneratePayload, x_api_key: Optional[str] = Header(default
 
     render_bottom_svg(bill, svg)
 
-    drawing = svg2rlg(str(svg))
-    renderPM.drawToFile(drawing, str(png), fmt="PNG")
+    # Conversion haute résolution
+    svg_to_highres_png(svg, png, dpi=300)
 
     return Response(
         content=png.read_bytes(),
