@@ -216,8 +216,16 @@ def generate(payload: GeneratePayload, x_api_key: Optional[str] = Header(default
 
     render_bottom_svg(bill, svg)
 
+    # Injecter aussi les informations complémentaires
+    printed_ref = prettify_groups4(rf_reference)
+    inject_info_both_sides(svg, printed_ref, [
+        (payload.info_company or "").strip(),
+        (payload.info_line1 or "").strip(),
+        (payload.info_line2 or "").strip(),
+    ])
+
     # Conversion haute résolution
-    svg_to_highres_png(svg, png, dpi=300)
+    svg_to_highres_png(svg, png, dpi=450)
 
     return Response(
         content=png.read_bytes(),
