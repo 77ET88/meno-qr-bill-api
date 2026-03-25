@@ -239,8 +239,17 @@ def inject_info_both_sides(svg_path: Path, printed_ref: str, lines):
                     break
 
         if y_monnaie:
-            cap = y_monnaie - 10.0
-            start_y = min(start_y, cap - block_h())
+          # Détection gauche / droite
+          is_left = x_ref < 300
+
+          if is_left:
+              # zone gauche plus petite → limite plus stricte
+              cap = y_monnaie - 25.0
+          else:
+              # zone droite normale
+              cap = y_monnaie - 10.0
+
+          start_y = min(start_y, cap - block_h())
 
         def new_text(ypos, txt, bold=False, size=normal_size):
             e = ET.Element(f"{{{NS['svg']}}}text", x=str(x_ref + x_shift), y=str(ypos))
