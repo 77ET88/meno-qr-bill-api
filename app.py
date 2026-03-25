@@ -136,27 +136,16 @@ def inject_info_both_sides(svg_path: Path, printed_ref: str, lines):
     if left == right:
         sides = [("right", right, SHIFT_X_RIGHT)]
 
-    content_lines = [s for s in (lines[:4]) if s]
-    n_lines = 1 + len(content_lines)
-
-    title_size = FONT_SIZE
-    normal_size = FONT_SIZE
-    contact_size = 8
-    line_gap = LINE_GAP
-
-    def block_h():
-        h = title_size
-        for i, s in enumerate((lines + ["", "", "", ""])[:4]):
-            if s:
-                h += line_gap
-        return h
-
-    def node_text(n):
-        return "".join(n.itertext()) if n is not None else ""
+    title_size = 8.6
+    normal_size = 7.8
+    contact_size = 7.0
+    title_gap = 10.0
+    line_gap = 9.0
 
     payable_labels = {"Payable par", "Zahlbar durch", "Payable by", "Pagabile da"}
     ref_labels = {"Référence", "Referenz", "Reference", "Riferimento"}
     money_labels = {"Monnaie", "Währung", "Currency", "Valuta"}
+
     excluded_labels = {
         "Monnaie", "Montant", "Compte / Payable à", "Référence",
         "Payable par", "Point de dépôt", "Récépissé", "Section paiement",
@@ -169,63 +158,81 @@ def inject_info_both_sides(svg_path: Path, printed_ref: str, lines):
         "Informations complémentaires"
     }
 
-    def inject_for_side(x_ref, y_ref, parent, x_shift):
-        # Supprime les anciennes lignes injectées près de cette colonne
+    content_lines = [(s or "").strip() for s in (lines + ["", "", "", ""])[:4]]
+    visible_lines = [s for s in content_lines if s]
+
+    def block_h():
+        h = title_size + title_gap
+        for idx, s in enumerate(content_lines):
+            if s:
+                h += line_gap
+        return h
+
+    def node_text(n):
+        return "".join(n.itertext()) if n is not None else ""
+
+    def new_text(x, y, txt, bold=False, size=normal_size):
+        e = ET.Element(f"{{{NS['svg']}}}text", x=str(x), y=str(y))
+        if bold:
+            e.set("font-weight", "bold")
+        e.set("font-size", str(size))
+        e.text = txt
+        return e
+
+    def inject_for_side(side_name, x_ref, y_ref, parent, x_shift):
+        # supprime les anciennes lignes injectées près de cette colonne
         to_del = []
         for n in list(parent):
             if not n.tag.endswith("text"):
                 continue
             txt = "".join(n.itertext()).strip()
-            if txt and (txt == "Informations complémentaires" or txt in lines):
+            if txt and (txt == "Informations complémentaires" or txt in visible_lines):
                 try:
                     x = float(n.attrib.get("x", "0"))
                 except ValueError:
                     continue
-                if abs(x - x_ref) <= 70:
+                if abs(x - x_ref) <= 80:
                     to_del.append(n)
         for n in to_del:
             parent.remove(n)
 
-        # Trouver le label "Payable par" / équivalent
+        # trouve la zone "payable par"
         y_label = None
         for n in list(parent):
             if n.tag.endswith("text") and "".join(n.itertext()).strip() in payable_labels:
                 try:
                     x = float(n.attrib.get("x", "0"))
                     y = float(n.attrib.get("y", "0"))
-                    if abs(x - x_ref) <= 70:
+                    if abs(x - x_ref) <= 80:
                         y_label = y
                         break
                 except ValueError:
                     pass
 
-        # Trouver le bas réel du bloc débiteur/payable-by
+        # calcule le bas réel du bloc débiteur
         y_bottom = None
         if y_label is not None:
             for n in list(parent):
                 if not n.tag.endswith("text"):
                     continue
-
                 txt = "".join(n.itertext()).strip()
                 if not txt or txt in excluded_labels:
                     continue
-
                 try:
                     x = float(n.attrib.get("x", "0"))
                     y = float(n.attrib.get("y", "0"))
                 except ValueError:
                     continue
-
-                if abs(x - x_ref) <= 70 and (y_label < y < y_label + 320):
+                if abs(x - x_ref) <= 80 and (y_label < y < y_label + 320):
                     y_bottom = max(y_bottom or y, y)
 
-        # Décalage plus généreux qu'avant
+        # position de départ : plus basse sous le bloc payable
         if y_bottom is not None:
-            start_y = y_bottom + 30
+            start_y = y_bottom + 26.0
         else:
-            start_y = y_ref + 34
+            start_y = y_ref + 30.0
 
-        # Éviter de descendre trop bas vers la zone monnaie
+        # limite haute de la zone monnaie/montant
         y_monnaie = None
         for n in list(parent):
             if n.tag.endswith("text") and "".join(node_text(n)).strip() in money_labels:
@@ -234,44 +241,34 @@ def inject_info_both_sides(svg_path: Path, printed_ref: str, lines):
                     y = float(n.attrib.get("y", "0"))
                 except ValueError:
                     continue
-                if abs(x - x_ref) <= 70:
+                if abs(x - x_ref) <= 80:
                     y_monnaie = y
                     break
 
         if y_monnaie:
-          # Détection gauche / droite
-          is_left = x_ref < 300
+            is_left = side_name == "left" or x_ref < 300
+            cap = y_monnaie - (24.0 if is_left else 12.0)
+            start_y = min(start_y, cap - block_h())
 
-          if is_left:
-              # zone gauche plus petite → limite plus stricte
-              cap = y_monnaie - 25.0
-          else:
-              # zone droite normale
-              cap = y_monnaie - 10.0
+        # sécurité minimale : ne pas remonter trop haut non plus
+        if y_bottom is not None:
+            start_y = max(start_y, y_bottom + 16.0)
 
-          start_y = min(start_y, cap - block_h())
+        x_text = x_ref + x_shift
 
-        def new_text(ypos, txt, bold=False, size=normal_size):
-            e = ET.Element(f"{{{NS['svg']}}}text", x=str(x_ref + x_shift), y=str(ypos))
-            if bold:
-                e.set("font-weight", "bold")
-            e.set("font-size", str(size))
-            e.text = txt
-            return e
+        # titre
+        parent.append(new_text(x_text, start_y, "Informations complémentaires", bold=True, size=title_size))
 
-        # Titre
-        parent.append(new_text(start_y, "Informations complémentaires", bold=True, size=title_size))
-
-        # Lignes
-        y = start_y + line_gap
-        for idx, s in enumerate((lines + ["", "", "", ""])[:4]):
+        # lignes
+        y = start_y + title_gap
+        for idx, s in enumerate(content_lines):
             if s:
                 size = contact_size if idx == 3 else normal_size
-                parent.append(new_text(y, s, bold=False, size=size))
+                parent.append(new_text(x_text, y, s, bold=False, size=size))
             y += line_gap
 
-    for _, (x_ref, y_ref, parent), shift in sides:
-        inject_for_side(x_ref, y_ref, parent, shift)
+    for side_name, (x_ref, y_ref, parent), shift in sides:
+        inject_for_side(side_name, x_ref, y_ref, parent, shift)
 
     tree.write(str(svg_path), encoding="utf-8")
 
