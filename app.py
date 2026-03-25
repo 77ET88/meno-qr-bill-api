@@ -135,7 +135,8 @@ def inject_info_both_sides(svg_path: Path, printed_ref: str, lines):
     if left == right:
         sides = [("right", right, SHIFT_X_RIGHT)]
 
-    n_lines = 1 + sum(1 for s in (lines[:3]) if s)
+    content_lines = [s for s in (lines[:4]) if s]
+    n_lines = 1 + len(content_lines)
 
     def block_h():
         return FONT_SIZE + (n_lines - 1) * LINE_GAP
@@ -173,7 +174,13 @@ def inject_info_both_sides(svg_path: Path, printed_ref: str, lines):
 
         EXCLUDE = {
             "Monnaie", "Montant", "Compte / Payable à", "Référence",
-            "Payable par", "Point de dépôt", "Récépissé", "Section paiement"
+            "Payable par", "Point de dépôt", "Récépissé", "Section paiement",
+            "Währung", "Betrag", "Konto / Zahlbar an", "Referenz",
+            "Zahlbar durch", "Annahmestelle", "Empfangsschein", "Zahlteil",
+            "Currency", "Amount", "Account / Payable to", "Reference",
+            "Payable by", "Receipt", "Payment part",
+            "Valuta", "Importo", "Conto / Pagabile a", "Riferimento",
+            "Pagabile da", "Ricevuta", "Sezione pagamento"
         }
 
         y_bottom = None
@@ -189,15 +196,17 @@ def inject_info_both_sides(svg_path: Path, printed_ref: str, lines):
                     y = float(n.attrib.get("y", "0"))
                 except ValueError:
                     continue
-                if abs(x - x_ref) <= 60 and (y_label < y < y_label + 240):
+                if abs(x - x_ref) <= 60 and (y_label < y < y_label + 260):
                     y_bottom = max(y_bottom or y, y)
 
         base_start = (y_bottom + OFFSET_BELOW_PAYEE_BLOCK) if y_bottom is not None else (y_ref + FALLBACK_CLEARANCE)
 
         start_y = base_start
         y_monnaie = None
+        money_labels = {"Monnaie", "Währung", "Currency", "Valuta"}
+
         for n in list(parent):
-            if n.tag.endswith("text") and "".join(node_text(n)).strip() == "Monnaie":
+            if n.tag.endswith("text") and "".join(node_text(n)).strip() in money_labels:
                 try:
                     x = float(n.attrib.get("x", "0"))
                     y = float(n.attrib.get("y", "0"))
@@ -206,6 +215,7 @@ def inject_info_both_sides(svg_path: Path, printed_ref: str, lines):
                 if abs(x - x_ref) <= 60:
                     y_monnaie = y
                     break
+
         if y_monnaie:
             cap = y_monnaie - 6.0
             start_y = min(start_y, cap - block_h())
@@ -220,7 +230,7 @@ def inject_info_both_sides(svg_path: Path, printed_ref: str, lines):
 
         parent.append(new_text(start_y, "Informations complémentaires", bold=True))
         y = start_y + LINE_GAP
-        for s in (lines + ["", ""])[:3]:
+        for s in (lines + ["", "", "", ""])[:4]:
             if s:
                 parent.append(new_text(y, s))
             y += LINE_GAP
@@ -313,6 +323,7 @@ class GeneratePayload(BaseModel):
     info_company: str = Field(default="KING JOUET")
     info_line1: str = Field(default="Avenue Cardinal-Mermillod 36")
     info_line2: str = Field(default="1227 Carouge GE")
+    info_contact: str = Field(default="")
 
     # Format de sortie
     output_format: str = Field(default="pdf", description="pdf ou png_bottom")
@@ -387,6 +398,7 @@ def generate(payload: GeneratePayload, x_api_key: Optional[str] = Header(default
                 (payload.info_company or "").strip(),
                 (payload.info_line1 or "").strip(),
                 (payload.info_line2 or "").strip(),
+                (payload.info_contact or "").strip(),
             ])
 
             drawing = svg2rlg(str(svg_path))
@@ -418,6 +430,7 @@ def generate(payload: GeneratePayload, x_api_key: Optional[str] = Header(default
                     (payload.info_company or "").strip(),
                     (payload.info_line1 or "").strip(),
                     (payload.info_line2 or "").strip(),
+                    (payload.info_contact or "").strip(),
                 ])
             except Exception as e:
                 print(f"[WARN] inject_info_both_sides on PNG failed: {e}")
