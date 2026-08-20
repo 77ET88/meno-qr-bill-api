@@ -497,8 +497,13 @@ def build_invoice_pdf(payload, bill: QRBill, rf_reference: str, out_pdf: Path, t
         ("2.", payload.invoice_desc_empty, "---", "Gratuit", "0.00 CHF"),
         ("3.", payload.invoice_desc_toys, fmt_weight(toys_w), f"{toys_rate:.2f}/T", fmt_money(toys_total)),
         ("4.", payload.invoice_desc_wood, fmt_weight(wood_w), f"{wood_rate:.2f}/T", fmt_money(wood_total)),
-        ("5.", payload.invoice_desc_household, fmt_weight(household_w), f"{household_rate:.2f}/T", fmt_money(household_total)),
     ]
+
+    # Ligne ordures ménagères uniquement si une quantité > 0 est saisie
+    if household_w > 0:
+        rows.append(
+            ("5.", payload.invoice_desc_household, fmt_weight(household_w), f"{household_rate:.2f}/T", fmt_money(household_total))
+        )
     total_table_h = header_h + row_h*len(rows)
     table_bottom = table_top-total_table_h
 
