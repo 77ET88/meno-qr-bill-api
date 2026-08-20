@@ -479,9 +479,17 @@ def build_invoice_pdf(payload, bill: QRBill, rf_reference: str, out_pdf: Path, t
     c.drawRightString(page_w-margin, title_y-9*mm, f"{labels['reference']}: {prettify_groups4(rf_reference)}")
 
     # Tableau
-    # Espace réduit entre le numéro de facture / référence et le tableau
+    # Colonnes rééquilibrées : davantage de place pour les valeurs à droite.
+    # La désignation est volontairement un peu plus étroite et peut passer sur 2 lignes.
     table_top = title_y - 15.5*mm
-    col_x = [margin, margin+15*mm, margin+120*mm, margin+143*mm, margin+168*mm, page_w-margin]
+    col_x = [
+        margin,
+        margin + 14*mm,   # Pos.          14 mm
+        margin + 102*mm,  # Désignation   88 mm
+        margin + 125*mm,  # Quantité      23 mm
+        margin + 147*mm,  # Unité         22 mm
+        page_w - margin,   # Prix total    27 mm
+    ]
     header_h = 7*mm
     row_h = 9.8*mm
     rows = [
@@ -497,22 +505,40 @@ def build_invoice_pdf(payload, bill: QRBill, rf_reference: str, out_pdf: Path, t
     c.setStrokeColor(colors.black)
     c.setLineWidth(0.5)
     c.rect(margin, table_bottom, page_w-2*margin, total_table_h)
-    for x in col_x[1:-1]: c.line(x, table_bottom, x, table_top)
+    for x in col_x[1:-1]:
+        c.line(x, table_bottom, x, table_top)
     c.line(margin, table_top-header_h, page_w-margin, table_top-header_h)
-    for i in range(1, len(rows)): c.line(margin, table_top-header_h-i*row_h, page_w-margin, table_top-header_h-i*row_h)
+    for i in range(1, len(rows)):
+        c.line(margin, table_top-header_h-i*row_h, page_w-margin, table_top-header_h-i*row_h)
 
-    c.setFont("Helvetica-Bold", 8.5)
-    headers=[labels['pos'],labels['description'],labels['qty'],labels['unit'],labels['total']]
-    for i,h in enumerate(headers): c.drawString(col_x[i]+2*mm, table_top-5.5*mm, h)
+    c.setFont("Helvetica-Bold", 8.2)
+    headers=[labels['pos'], labels['description'], labels['qty'], labels['unit'], labels['total']]
+    for i, h in enumerate(headers):
+        if i == 4:
+            # Le titre de la dernière colonne reste bien à l'intérieur de la cellule.
+            c.drawRightString(col_x[5]-2*mm, table_top-5.5*mm, h)
+        else:
+            c.drawString(col_x[i]+2*mm, table_top-5.5*mm, h)
 
-    for r,row in enumerate(rows):
-        ry=table_top-header_h-r*row_h-4.5*mm
-        c.setFont("Helvetica", 8.2)
+    for r, row in enumerate(rows):
+        ry = table_top-header_h-r*row_h-4.3*mm
+        c.setFont("Helvetica", 8.0)
         c.drawString(col_x[0]+2*mm, ry, row[0])
-        wrap_text(c,row[1],col_x[1]+1.5*mm,ry,col_x[2]-col_x[1]-3*mm,size=7.8,leading=8.5,max_lines=3)
-        c.drawString(col_x[2]+2*mm,ry,row[2])
-        c.drawString(col_x[3]+2*mm,ry,row[3])
-        c.drawString(col_x[4]+2*mm,ry,row[4])
+
+        # Désignation : largeur réduite, 2 lignes maximum pour préserver la hauteur globale.
+        wrap_text(
+            c, row[1],
+            col_x[1]+1.5*mm, ry,
+            col_x[2]-col_x[1]-3*mm,
+            size=7.2, leading=7.8, max_lines=2
+        )
+
+        c.setFont("Helvetica", 7.8)
+        c.drawString(col_x[2]+2*mm, ry, row[2])
+        c.drawString(col_x[3]+2*mm, ry, row[3])
+
+        # Prix total aligné à droite avec une marge interne : aucun montant ne sort du tableau.
+        c.drawRightString(col_x[5]-2*mm, ry, row[4])
 
     # Totaux
     totals_w=80*mm; totals_x=page_w-margin-totals_w; totals_y=table_bottom-24*mm
