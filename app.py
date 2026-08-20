@@ -418,8 +418,10 @@ def build_invoice_pdf(payload, bill: QRBill, rf_reference: str, out_pdf: Path, t
     c.setTitle(f"Facture {payload.invoice_no}")
 
     margin = 18 * mm
+    # Réserve la hauteur réglementaire de la partie basse du QR-Bill,
+    # avec une marge minimale pour favoriser une sortie sur une seule page.
     qr_target_h = 104 * mm
-    invoice_bottom = qr_target_h + 4 * mm
+    invoice_bottom = qr_target_h + 1.5 * mm
 
     # En-tête
     c.setFont("Helvetica-Bold", 8)
@@ -449,12 +451,14 @@ def build_invoice_pdf(payload, bill: QRBill, rf_reference: str, out_pdf: Path, t
     c.drawString(right_x, y2, labels["invoice_date"] + " :")
     c.setFont("Helvetica", 9.2)
     c.drawRightString(page_w-margin, y2, payload.invoice_date)
+
+    # Date de livraison / prestation : le libellé sur une ligne, la période juste en dessous
     y2 -= 7*mm
     c.setFont("Helvetica-Bold", 9.5)
     c.drawString(right_x, y2, labels["service_date"] + " :")
     c.setFont("Helvetica", 9.2)
-    c.drawRightString(page_w-margin, y2, f"{payload.invoice_service_start} – {payload.invoice_service_end}")
-    y2 -= 12*mm
+    c.drawRightString(page_w-margin, y2-4.5*mm, f"{payload.invoice_service_start} – {payload.invoice_service_end}")
+    y2 -= 13.5*mm
     c.setFont("Helvetica-Bold", 9.5)
     c.drawRightString(page_w-margin, y2, payload.creditor_name)
     c.setFont("Helvetica", 9)
@@ -465,7 +469,8 @@ def build_invoice_pdf(payload, bill: QRBill, rf_reference: str, out_pdf: Path, t
     c.drawRightString(page_w-margin, y2-13.5*mm, payload.iban)
 
     # Titre et référence
-    title_y = page_h - 92*mm
+    # Rapproché du bloc d'informations pour gagner de la place verticale
+    title_y = page_h - 73*mm
     c.setFont("Helvetica-Bold", 18)
     c.drawString(margin, title_y, labels["invoice"])
     c.setFont("Helvetica-Bold", 10.5)
@@ -474,10 +479,11 @@ def build_invoice_pdf(payload, bill: QRBill, rf_reference: str, out_pdf: Path, t
     c.drawRightString(page_w-margin, title_y-9*mm, f"{labels['reference']}: {prettify_groups4(rf_reference)}")
 
     # Tableau
-    table_top = title_y - 22*mm
+    # Espace réduit entre le numéro de facture / référence et le tableau
+    table_top = title_y - 15.5*mm
     col_x = [margin, margin+15*mm, margin+120*mm, margin+143*mm, margin+168*mm, page_w-margin]
-    header_h = 8*mm
-    row_h = 11.3*mm
+    header_h = 7*mm
+    row_h = 9.8*mm
     rows = [
         ("1.", payload.invoice_desc_flat, "Illimité", "1", fmt_money(flat)),
         ("2.", payload.invoice_desc_empty, "---", "Gratuit", "0.00 CHF"),
@@ -509,9 +515,9 @@ def build_invoice_pdf(payload, bill: QRBill, rf_reference: str, out_pdf: Path, t
         c.drawString(col_x[4]+2*mm,ry,row[4])
 
     # Totaux
-    totals_w=80*mm; totals_x=page_w-margin-totals_w; totals_y=table_bottom-25*mm
-    c.rect(totals_x, totals_y, totals_w, 25*mm)
-    c.line(totals_x+52*mm, totals_y, totals_x+52*mm, totals_y+25*mm)
+    totals_w=80*mm; totals_x=page_w-margin-totals_w; totals_y=table_bottom-24*mm
+    c.rect(totals_x, totals_y, totals_w, 24*mm)
+    c.line(totals_x+52*mm, totals_y, totals_x+52*mm, totals_y+24*mm)
     c.line(totals_x, totals_y+8*mm, totals_x+totals_w, totals_y+8*mm)
     c.line(totals_x, totals_y+16*mm, totals_x+totals_w, totals_y+16*mm)
     c.setFont("Helvetica-Bold", 9)
@@ -525,7 +531,7 @@ def build_invoice_pdf(payload, bill: QRBill, rf_reference: str, out_pdf: Path, t
     c.drawString(totals_x+54*mm, totals_y+3*mm, fmt_money(grand))
 
     # Vérifie que le contenu tient; sinon QR sur page 2
-    one_page = totals_y >= invoice_bottom + 3*mm
+    one_page = totals_y >= invoice_bottom + 1.5*mm
     if one_page:
         scale = min(page_w/qr_drawing.width, qr_target_h/qr_drawing.height)
         qr_drawing.scale(scale, scale)
