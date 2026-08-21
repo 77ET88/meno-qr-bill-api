@@ -524,17 +524,29 @@ def build_invoice_pdf(payload, bill: QRBill, rf_reference: str, out_pdf: Path, t
 
     right_x = page_w - 78*mm
     y2 = page_h - 18*mm
-    c.setFont("Helvetica-Bold", 9.5)
-    c.drawString(right_x, y2, labels["invoice_date"] + " :")
-    c.setFont("Helvetica", 9.2)
-    c.drawRightString(page_w-margin, y2, payload.invoice_date)
+    # Bloc dates aligné à droite, comme sur la facture de référence.
+    # La date de facture est placée immédiatement après son libellé,
+    # et l'ensemble est calé sur la marge droite.
+    right_edge = page_w - margin
+    invoice_label = labels["invoice_date"] + " :"
+    invoice_value = payload.invoice_date
+    gap = 1.2 * mm
+    label_w = pdfmetrics.stringWidth(invoice_label, "Helvetica-Bold", 9.5)
+    value_w = pdfmetrics.stringWidth(invoice_value, "Helvetica", 9.2)
+    invoice_x = right_edge - (label_w + gap + value_w)
 
-    # Date de livraison / prestation : le libellé sur une ligne, la période juste en dessous
+    c.setFont("Helvetica-Bold", 9.5)
+    c.drawString(invoice_x, y2, invoice_label)
+    c.setFont("Helvetica", 9.2)
+    c.drawString(invoice_x + label_w + gap, y2, invoice_value)
+
+    # Date de livraison / prestation : libellé et période tous deux
+    # alignés sur la même marge droite.
     y2 -= 7*mm
     c.setFont("Helvetica-Bold", 9.5)
-    c.drawString(right_x, y2, labels["service_date"] + " :")
+    c.drawRightString(right_edge, y2, labels["service_date"] + " :")
     c.setFont("Helvetica", 9.2)
-    c.drawRightString(page_w-margin, y2-4.5*mm, f"{payload.invoice_service_start} – {payload.invoice_service_end}")
+    c.drawRightString(right_edge, y2-4.5*mm, f"{payload.invoice_service_start} – {payload.invoice_service_end}")
     y2 -= 13.5*mm
     c.setFont("Helvetica-Bold", 9.5)
     c.drawRightString(page_w-margin, y2, payload.creditor_name)
