@@ -22,6 +22,7 @@ from reportlab.pdfgen import canvas
 from reportlab.lib.pagesizes import A4
 from reportlab.lib.units import mm
 from reportlab.lib import colors
+from reportlab.lib.utils import ImageReader
 
 
 # ========= Réglages injection (anti-superposition) =========
@@ -31,6 +32,12 @@ FONT_SIZE = 10
 LINE_GAP = 12
 SHIFT_X_LEFT = 0
 SHIFT_X_RIGHT = 0
+
+# ========= Logo facture =========
+BASE_DIR = Path(__file__).resolve().parent
+LOGO_PATH = BASE_DIR / "meno-transport-logo.png"
+LOGO_WIDTH = 32 * mm
+LOGO_HEIGHT = 32 * mm
 
 
 # ========= Utils ISO11649 =========
@@ -426,6 +433,27 @@ def build_invoice_pdf(payload, bill: QRBill, rf_reference: str, out_pdf: Path, t
     # En-tête
     c.setFont("Helvetica-Bold", 8)
     c.drawString(margin, page_h - 16*mm, f"{payload.creditor_name}, {creditor_street_full}, {payload.creditor_zip} {payload.creditor_city}")
+
+    # Logo Meno Transport : centré dans l'espace entre le bloc débiteur et le bloc dates.
+    # Son ajout ne modifie pas la hauteur réservée à la facture.
+    if LOGO_PATH.exists():
+        try:
+            logo_x = (page_w - LOGO_WIDTH) / 2
+            logo_y = page_h - 61 * mm
+            c.drawImage(
+                ImageReader(str(LOGO_PATH)),
+                logo_x,
+                logo_y,
+                width=LOGO_WIDTH,
+                height=LOGO_HEIGHT,
+                preserveAspectRatio=True,
+                mask="auto",
+                anchor="c",
+            )
+        except Exception as e:
+            print(f"[WARN] Impossible d'afficher le logo facture: {e}")
+    else:
+        print(f"[WARN] Logo facture introuvable: {LOGO_PATH}")
 
     y = page_h - 28*mm
     c.setFont("Helvetica-Bold", 10)
