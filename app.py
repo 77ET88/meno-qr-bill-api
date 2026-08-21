@@ -482,11 +482,12 @@ def build_invoice_pdf(payload, bill: QRBill, rf_reference: str, out_pdf: Path, t
     c.setFont("Helvetica-Bold", 8)
     c.drawString(margin, page_h - 16*mm, f"{payload.creditor_name}, {creditor_street_full}, {payload.creditor_zip} {payload.creditor_city}")
 
-    # Logo Meno Transport : centré dans l'espace entre le bloc débiteur et le bloc dates.
-    # Son ajout ne modifie pas la hauteur réservée à la facture.
+    # Logo Meno Transport : rapproché du bloc de gauche, comme sur la facture 2125.
+    # Il se place juste après les coordonnées / informations complémentaires,
+    # sans modifier la hauteur réservée à la facture.
     if LOGO_PATH.exists():
         try:
-            logo_x = (page_w - LOGO_WIDTH) / 2
+            logo_x = 77 * mm
             logo_y = page_h - 61 * mm
             c.drawImage(
                 ImageReader(str(LOGO_PATH)),
