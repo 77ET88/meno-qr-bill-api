@@ -381,6 +381,49 @@ def invoice_labels(lang: str):
     return data.get(lang, data["fr"])
 
 
+def draw_invoice_footer(c, page_w: float):
+    """Dessine le pied de page Meno Transport sous le QR-Bill.
+
+    La zone est volontairement compacte pour rester sur une seule page A4
+    et reproduire la structure du PDF de référence.
+    """
+    footer_y = 6.0 * mm
+    separator_y = 23.0 * mm
+    left_x = 18.0 * mm
+    center_x = page_w / 2
+    right_x = page_w - 18.0 * mm
+
+    # Ligne de séparation au-dessus du pied de page
+    c.saveState()
+    c.setStrokeColor(colors.HexColor("#8A8A8A"))
+    c.setLineWidth(0.45)
+    c.line(left_x, separator_y, right_x, separator_y)
+
+    # Bloc gauche
+    c.setFillColor(colors.black)
+    c.setFont("Helvetica-Bold", 6.6)
+    c.drawString(left_x, footer_y + 13.0*mm, "Meno Transport Reinigung")
+    c.drawString(left_x, footer_y + 9.8*mm, "YILMAZ Enis")
+    c.setFont("Helvetica", 6.4)
+    c.drawString(left_x, footer_y + 6.6*mm, "Route de la Gare 100,")
+    c.drawString(left_x, footer_y + 3.4*mm, "1785 CRESSIER FR")
+
+    # Bloc central
+    c.setFont("Helvetica-Bold", 6.6)
+    c.drawCentredString(center_x, footer_y + 13.0*mm, "info@meno-transport.ch")
+    c.drawCentredString(center_x, footer_y + 9.8*mm, "UID : CHE-203.265.932")
+    c.drawCentredString(center_x, footer_y + 6.6*mm, "CH-217.3.577.844-5")
+
+    # Bloc droit
+    c.setFont("Helvetica-Bold", 6.6)
+    c.drawRightString(right_x, footer_y + 13.0*mm, "meno-transport.ch")
+    c.setFont("Helvetica", 6.4)
+    c.drawRightString(right_x, footer_y + 9.8*mm, "+41 76 270 16 76")
+    c.drawRightString(right_x, footer_y + 6.6*mm, "+41 78 225 52 52")
+    c.drawRightString(right_x, footer_y + 3.4*mm, "+41 79 506 36 43")
+    c.restoreState()
+
+
 def build_invoice_pdf(payload, bill: QRBill, rf_reference: str, out_pdf: Path, tmp_dir: Path):
     labels = invoice_labels(payload.lang)
 
@@ -427,8 +470,13 @@ def build_invoice_pdf(payload, bill: QRBill, rf_reference: str, out_pdf: Path, t
     margin = 18 * mm
     # Réserve la hauteur réglementaire de la partie basse du QR-Bill,
     # avec une marge minimale pour favoriser une sortie sur une seule page.
-    qr_target_h = 104 * mm
-    invoice_bottom = qr_target_h + 1.5 * mm
+    # Le QR-Bill reste prioritaire sur la même page.
+    # On réserve une petite bande de 24 mm en bas pour le pied de page,
+    # puis on place le QR-Bill juste au-dessus.
+    footer_reserved_h = 24 * mm
+    qr_target_h = 92 * mm
+    qr_y = footer_reserved_h
+    invoice_bottom = qr_y + qr_target_h + 1.5 * mm
 
     # En-tête
     c.setFont("Helvetica-Bold", 8)
@@ -589,17 +637,21 @@ def build_invoice_pdf(payload, bill: QRBill, rf_reference: str, out_pdf: Path, t
     c.drawString(totals_x+54*mm, totals_y+11*mm, fmt_money(vat))
     c.drawString(totals_x+54*mm, totals_y+3*mm, fmt_money(grand))
 
-    # Vérifie que le contenu tient; sinon QR sur page 2
+    # Vérifie que le contenu tient; sinon QR sur page 2.
+    # Le pied de page est toujours dessiné sur la page qui contient le QR-Bill.
     one_page = totals_y >= invoice_bottom + 1.5*mm
     if one_page:
         scale = min(page_w/qr_drawing.width, qr_target_h/qr_drawing.height)
         qr_drawing.scale(scale, scale)
-        renderPDF.draw(qr_drawing, c, 0, 0)
+        renderPDF.draw(qr_drawing, c, 0, qr_y)
+        draw_invoice_footer(c, page_w)
     else:
         c.showPage()
-        scale = min(page_w/qr_drawing.width, page_h/qr_drawing.height)
+        # Même composition sur la page 2 : QR-Bill au-dessus du footer.
+        scale = min(page_w/qr_drawing.width, qr_target_h/qr_drawing.height)
         qr_drawing.scale(scale, scale)
-        renderPDF.draw(qr_drawing, c, 0, page_h-qr_drawing.height*scale)
+        renderPDF.draw(qr_drawing, c, 0, qr_y)
+        draw_invoice_footer(c, page_w)
 
     c.save()
     return grand, net, vat, one_page
