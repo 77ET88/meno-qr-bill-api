@@ -425,8 +425,26 @@ def draw_invoice_footer(c, page_w: float):
     c.restoreState()
 
 
+def info_company_with_store_code(info_company: str, company_code: str) -> str:
+    """
+    Ajoute le code magasin à la ligne Info company sans le dupliquer.
+    Exemple : "KING JOUET" + "0993" -> "KING JOUET 0993,"
+    """
+    base = (info_company or "").strip().rstrip(" ,")
+    code = re.sub(r"\D", "", str(company_code or ""))
+
+    if not base:
+        return code + "," if code else ""
+
+    if code and re.search(rf"(?<!\d){re.escape(code)}(?!\d)", base):
+        return base + ","
+
+    return f"{base} {code}," if code else base + ","
+
+
 def build_invoice_pdf(payload, bill: QRBill, rf_reference: str, out_pdf: Path, tmp_dir: Path):
     labels = invoice_labels(payload.lang)
+    info_company_display = info_company_with_store_code(payload.info_company, payload.company_code)
 
     flat = money(payload.invoice_flat_fee)
     toys_w, toys_rate = weight(payload.invoice_toys_weight), money(payload.invoice_toys_rate)
@@ -455,7 +473,7 @@ def build_invoice_pdf(payload, bill: QRBill, rf_reference: str, out_pdf: Path, t
     qr_svg = tmp_dir / "invoice-qr-bottom.svg"
     render_bottom_svg(invoice_bill, qr_svg)
     inject_info_both_sides(qr_svg, prettify_groups4(rf_reference), [
-        (payload.info_company or "").strip(),
+        info_company_display,
         (payload.info_line1 or "").strip(),
         (payload.info_line2 or "").strip(),
         (payload.info_contact or "").strip(),
@@ -518,7 +536,7 @@ def build_invoice_pdf(payload, bill: QRBill, rf_reference: str, out_pdf: Path, t
     c.drawString(margin, y-1*mm, labels["extra"] + " :")
     c.setFont("Helvetica", 8.8)
     y -= 6*mm
-    for line in [payload.info_company, payload.info_line1, payload.info_line2]:
+    for line in [info_company_display, payload.info_line1, payload.info_line2]:
         if line:
             c.drawString(margin, y, line)
             y -= 4.1*mm
@@ -808,7 +826,7 @@ def generate(payload: GeneratePayload, x_api_key: Optional[str] = Header(default
 
             printed_ref = prettify_groups4(rf_reference)
             inject_info_both_sides(svg_path, printed_ref, [
-                (payload.info_company or "").strip(),
+                info_company_with_store_code(payload.info_company, payload.company_code),
                 (payload.info_line1 or "").strip(),
                 (payload.info_line2 or "").strip(),
                 (payload.info_contact or "").strip(),
