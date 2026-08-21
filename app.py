@@ -19,6 +19,7 @@ from qrbill import QRBill
 from svglib.svglib import svg2rlg
 from reportlab.graphics import renderPDF, renderPM
 from reportlab.pdfgen import canvas
+from reportlab.pdfbase import pdfmetrics
 from reportlab.lib.pagesizes import A4
 from reportlab.lib.units import mm
 from reportlab.lib import colors
