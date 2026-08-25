@@ -455,19 +455,46 @@ def draw_invoice_footer(c, page_w: float):
 
 def info_company_with_store_code(info_company: str, company_code: str) -> str:
     """
-    Ajoute le code magasin à la ligne Info company sans le dupliquer.
-    Exemple : "KING JOUET" + "0993" -> "KING JOUET 0993,"
+    Ajoute le code magasin à la ligne Info company uniquement si une Info company
+    a réellement été saisie.
+
+    Exemples :
+      "KING JOUET" + "0993" -> "KING JOUET 0993,"
+      "" + "0000"           -> ""
     """
     base = (info_company or "").strip().rstrip(" ,")
     code = re.sub(r"\D", "", str(company_code or ""))
 
+    # IMPORTANT : un code magasin seul ne doit jamais faire apparaître
+    # le bloc "Informations complémentaires".
     if not base:
-        return code + "," if code else ""
+        return ""
 
     if code and re.search(rf"(?<!\d){re.escape(code)}(?!\d)", base):
         return base + ","
 
     return f"{base} {code}," if code else base + ","
+
+
+def format_service_period(start_date: str, end_date: str) -> str:
+    """
+    Formate la période de livraison/prestation sans tiret orphelin.
+
+    - début + fin : "01.08.2026 – 31.08.2026"
+    - début seul  : "01.08.2026"
+    - fin seule   : "31.08.2026"
+    - aucun       : ""
+    """
+    start = (start_date or "").strip()
+    end = (end_date or "").strip()
+
+    if start and end:
+        return f"{start} – {end}"
+    if start:
+        return start
+    if end:
+        return end
+    return ""
 
 
 def build_invoice_pdf(payload, bill: QRBill, rf_reference: str, out_pdf: Path, tmp_dir: Path):
@@ -602,12 +629,21 @@ def build_invoice_pdf(payload, bill: QRBill, rf_reference: str, out_pdf: Path, t
         c.drawString(margin, y, line)
         y -= 4.3*mm
 
-    c.setFont("Helvetica-Bold", 9.5)
-    c.drawString(margin, y-1*mm, labels["extra"] + " :")
-    c.setFont("Helvetica", 8.8)
-    y -= 6*mm
-    for line in [info_company_display, payload.info_line1, payload.info_line2]:
-        if line:
+    # Informations complémentaires :
+    # le titre et le bloc entier restent invisibles si aucun contenu n'est saisi.
+    extra_lines = [
+        (info_company_display or "").strip(),
+        (payload.info_line1 or "").strip(),
+        (payload.info_line2 or "").strip(),
+    ]
+    extra_lines = [line for line in extra_lines if line]
+
+    if extra_lines:
+        c.setFont("Helvetica-Bold", 9.5)
+        c.drawString(margin, y-1*mm, labels["extra"] + " :")
+        c.setFont("Helvetica", 8.8)
+        y -= 6*mm
+        for line in extra_lines:
             c.drawString(margin, y, line)
             y -= 4.1*mm
 
@@ -635,7 +671,12 @@ def build_invoice_pdf(payload, bill: QRBill, rf_reference: str, out_pdf: Path, t
     c.setFont("Helvetica-Bold", 9.5)
     c.drawRightString(right_edge, y2, labels["service_date"] + " :")
     c.setFont("Helvetica", 9.2)
-    c.drawRightString(right_edge, y2-4.5*mm, f"{payload.invoice_service_start} – {payload.invoice_service_end}")
+    service_period = format_service_period(
+        payload.invoice_service_start,
+        payload.invoice_service_end,
+    )
+    if service_period:
+        c.drawRightString(right_edge, y2-4.5*mm, service_period)
     y2 -= 13.5*mm
     c.setFont("Helvetica-Bold", 9.5)
     c.drawRightString(page_w-margin, y2, payload.creditor_name)
