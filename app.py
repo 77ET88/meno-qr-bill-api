@@ -8,7 +8,7 @@ import xml.etree.ElementTree as ET
 from datetime import date, datetime
 from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
 from pathlib import Path
-from typing import Optional
+from typing import Optional, List
 
 from fastapi import FastAPI, Response, HTTPException, Header
 from fastapi.middleware.cors import CORSMiddleware
@@ -371,6 +371,34 @@ def wrap_text(c, text: str, x: float, y: float, max_width: float, font="Helvetic
     return y
 
 
+
+def invoice_quantity(value) -> Decimal:
+    """Quantité générique pour les lignes libres."""
+    try:
+        text = str(value or "0").strip().replace("'", "").replace(" ", "").replace(",", ".")
+        return Decimal(text)
+    except (InvalidOperation, ValueError):
+        raise ValueError(f"Quantité invalide: {value}")
+
+
+def fmt_quantity(value: Decimal) -> str:
+    """Affiche 225 au lieu de 225.000, mais conserve les décimales utiles."""
+    s = format(value.normalize(), "f")
+    if "." in s:
+        s = s.rstrip("0").rstrip(".")
+    return s.replace(".", ",")
+
+
+def free_unit_display(price: Decimal, label: str) -> str:
+    label = (label or "").strip()
+    price_txt = f"{price:.2f}"
+    if not label:
+        return price_txt
+    if label.startswith(("/", "-", "%")):
+        return price_txt + label
+    return price_txt + " " + label
+
+
 def invoice_labels(lang: str):
     lang = (lang or "fr").lower()
     data = {
@@ -446,16 +474,58 @@ def build_invoice_pdf(payload, bill: QRBill, rf_reference: str, out_pdf: Path, t
     labels = invoice_labels(payload.lang)
     info_company_display = info_company_with_store_code(payload.info_company, payload.company_code)
 
-    flat = money(payload.invoice_flat_fee)
-    toys_w, toys_rate = weight(payload.invoice_toys_weight), money(payload.invoice_toys_rate)
-    wood_w, wood_rate = weight(payload.invoice_wood_weight), money(payload.invoice_wood_rate)
-    household_w, household_rate = weight(payload.invoice_household_weight), money(payload.invoice_household_rate)
-
-    toys_total = (toys_w * toys_rate).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
-    wood_total = (wood_w * wood_rate).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
-    household_total = (household_w * household_rate).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
-    net = flat + toys_total + wood_total + household_total
+    invoice_mode = (payload.invoice_mode or "standard").strip().lower()
     vat_rate = money(payload.invoice_vat_rate)
+    rows = []
+
+    if invoice_mode == "free":
+        net = Decimal("0.00")
+        for item in payload.invoice_lines[:15]:
+            description = (item.description or "").strip()
+            if not description:
+                continue
+
+            qty = invoice_quantity(item.quantity)
+            unit_price = money(item.unit_price)
+            line_total = (qty * unit_price).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+            net += line_total
+
+            rows.append((
+                f"{len(rows) + 1}.",
+                description,
+                fmt_quantity(qty),
+                free_unit_display(unit_price, item.unit_label),
+                fmt_money(line_total),
+            ))
+
+        if not rows:
+            raise ValueError("La facturation libre doit contenir au moins une prestation.")
+
+        net = net.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+
+    else:
+        flat = money(payload.invoice_flat_fee)
+        toys_w, toys_rate = weight(payload.invoice_toys_weight), money(payload.invoice_toys_rate)
+        wood_w, wood_rate = weight(payload.invoice_wood_weight), money(payload.invoice_wood_rate)
+        household_w, household_rate = weight(payload.invoice_household_weight), money(payload.invoice_household_rate)
+
+        toys_total = (toys_w * toys_rate).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+        wood_total = (wood_w * wood_rate).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+        household_total = (household_w * household_rate).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+        net = flat + toys_total + wood_total + household_total
+
+        rows = [
+            ("1.", payload.invoice_desc_flat, "Illimité", "1", fmt_money(flat)),
+            ("2.", payload.invoice_desc_empty, "---", "Gratuit", "0.00 CHF"),
+            ("3.", payload.invoice_desc_toys, fmt_weight(toys_w), f"{toys_rate:.2f}/T", fmt_money(toys_total)),
+            ("4.", payload.invoice_desc_wood, fmt_weight(wood_w), f"{wood_rate:.2f}/T", fmt_money(wood_total)),
+        ]
+
+        if household_w > 0:
+            rows.append(
+                (f"{len(rows) + 1}.", payload.invoice_desc_household, fmt_weight(household_w), f"{household_rate:.2f}/T", fmt_money(household_total))
+            )
+
     vat = (net * vat_rate / Decimal("100")).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
     grand = net + vat
 
@@ -600,18 +670,6 @@ def build_invoice_pdf(payload, bill: QRBill, rf_reference: str, out_pdf: Path, t
     ]
     header_h = 7*mm
     row_h = 9.8*mm
-    rows = [
-        ("1.", payload.invoice_desc_flat, "Illimité", "1", fmt_money(flat)),
-        ("2.", payload.invoice_desc_empty, "---", "Gratuit", "0.00 CHF"),
-        ("3.", payload.invoice_desc_toys, fmt_weight(toys_w), f"{toys_rate:.2f}/T", fmt_money(toys_total)),
-        ("4.", payload.invoice_desc_wood, fmt_weight(wood_w), f"{wood_rate:.2f}/T", fmt_money(wood_total)),
-    ]
-
-    # Ligne ordures ménagères uniquement si une quantité > 0 est saisie
-    if household_w > 0:
-        rows.append(
-            ("5.", payload.invoice_desc_household, fmt_weight(household_w), f"{household_rate:.2f}/T", fmt_money(household_total))
-        )
     total_table_h = header_h + row_h*len(rows)
     table_bottom = table_top-total_table_h
 
@@ -708,6 +766,13 @@ app.add_middleware(
 )
 
 
+class InvoiceLine(BaseModel):
+    description: str = Field(default="")
+    quantity: str = Field(default="1")
+    unit_price: str = Field(default="0.00")
+    unit_label: str = Field(default="")
+
+
 class GeneratePayload(BaseModel):
     amount: str = Field(default="162.15")
     iban: str = Field(default="CH15 0076 8300 1685 0780 5")
@@ -736,6 +801,10 @@ class GeneratePayload(BaseModel):
     info_line1: str = Field(default="Avenue Cardinal-Mermillod 36")
     info_line2: str = Field(default="1227 Carouge GE")
     info_contact: str = Field(default="")
+
+    # Type de facturation
+    invoice_mode: str = Field(default="standard", description="standard ou free")
+    invoice_lines: List[InvoiceLine] = Field(default_factory=list)
 
     # Données facture complète (version d'essai)
     invoice_date: str = Field(default_factory=lambda: date.today().strftime("%d.%m.%Y"))
